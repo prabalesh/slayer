@@ -1,7 +1,6 @@
 package networking
 
 import (
-	"context"
 	"net"
 	"net/netip"
 	"sync"
@@ -9,6 +8,38 @@ import (
 
 	"github.com/mdlayher/arp"
 )
+
+type Job func()
+
+type Pool struct {
+	workerQueue chan Job
+	wg          sync.WaitGroup
+}
+
+func NewPool(workerCount int) *Pool {
+	pool := &Pool{workerQueue: make(chan Job)}
+	pool.wg.Add(workerCount)
+
+	for i := 0; i < workerCount; i++ {
+		go func() {
+			defer pool.wg.Done()
+			for job := range pool.workerQueue {
+				job()
+			}
+		}()
+	}
+
+	return pool
+}
+
+func (p *Pool) AddJob(job Job) {
+	p.workerQueue <- job
+}
+
+func (p *Pool) Wait() {
+	close(p.workerQueue)
+	p.wg.Wait()
+}
 
 type Host struct {
 	IP   net.IP
@@ -31,8 +62,6 @@ func NewArpScanner(iface *net.Interface) *ArpScanner {
 }
 
 func (a *ArpScanner) Scan(ips []net.IP) []Host {
-	ctx := context.Background()
-
 	// Check if we got valid inputs
 	if a.iface == nil || len(ips) == 0 {
 		return []Host{}
@@ -41,42 +70,28 @@ func (a *ArpScanner) Scan(ips []net.IP) []Host {
 	var activeHosts []Host
 	var hostsMutex sync.Mutex
 
-	// Create a channel to limit how many goroutines run at once
-	// Think of it like a parking lot with limited spaces
-	workerSemaphore := make(chan struct{}, a.maxWorkers)
-
-	var wg sync.WaitGroup
+	pool := NewPool(a.maxWorkers)
 
 	for _, ip := range ips {
 		currentIP := ip
-		wg.Add(1)
-		go func(ipToScan net.IP) {
-			defer wg.Done()
-
-			// Try to get a "parking space" in our semaphore
-			select {
-			case workerSemaphore <- struct{}{}: // Got a space!
-				defer func() { <-workerSemaphore }() // Give up the space when done
-			case <-ctx.Done(): // Someone cancelled us
-				return
-			}
-
-			// Try to find the device at this IP address
-			host := a.scanSingleIP(ctx, ipToScan)
+		job := func() {
+			host := a.scanSingleIP(currentIP)
 			if host != nil {
 				// We found a device! Add it to our list safely
 				hostsMutex.Lock()
 				activeHosts = append(activeHosts, *host)
 				hostsMutex.Unlock()
 			}
-		}(currentIP)
+		}
+		pool.AddJob(job)
+
 	}
-	wg.Wait()
+	pool.Wait()
 	return activeHosts
 }
 
 // scanSingleIP tries to find a device at one specific IP address
-func (a *ArpScanner) scanSingleIP(ctx context.Context, ip net.IP) *Host {
+func (a *ArpScanner) scanSingleIP(ip net.IP) *Host {
 	// Create a connection to send ARP requests
 	conn, err := arp.Dial(a.iface)
 	if err != nil {
@@ -109,18 +124,9 @@ func (a *ArpScanner) scanSingleIP(ctx context.Context, ip net.IP) *Host {
 		MAC: mac.String(),
 	}
 
-	// Try to find the device's name (like "Johns-iPhone")
-	// This is optional and might be slow, so we do it in a separate step
-	select {
-	case <-ctx.Done():
-		// Someone cancelled us, return what we have
-		return host
-	default:
-		// Try to look up the hostname
-		names, err := net.LookupAddr(ip.String())
-		if err == nil && len(names) > 0 {
-			host.Name = names[0]
-		}
+	names, err := net.LookupAddr(ip.String())
+	if err == nil && len(names) > 0 {
+		host.Name = names[0]
 	}
 
 	return host
