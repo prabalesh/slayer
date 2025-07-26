@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mdlayher/arp"
@@ -42,12 +43,14 @@ func (p *Pool) Wait() {
 }
 
 type Host struct {
+	Id   uint64
 	IP   net.IP
 	MAC  string
 	Name string
 }
 
 type ArpScanner struct {
+	idCounter  uint64
 	iface      *net.Interface
 	timeout    time.Duration
 	maxWorkers int
@@ -56,7 +59,7 @@ type ArpScanner struct {
 func NewArpScanner(iface *net.Interface) *ArpScanner {
 	return &ArpScanner{
 		iface:      iface,
-		timeout:    2 * time.Second,
+		timeout:    5 * time.Second,
 		maxWorkers: 64,
 	}
 }
@@ -119,7 +122,9 @@ func (a *ArpScanner) scanSingleIP(ip net.IP) *Host {
 	}
 
 	// We found a device! Create a Host record
+	id := atomic.AddUint64(&a.idCounter, 1)
 	host := &Host{
+		Id:  id,
 		IP:  ip,
 		MAC: mac.String(),
 	}
