@@ -9,6 +9,20 @@ import (
 	"github.com/prabalesh/slayer/internal/networking"
 )
 
+var activeHosts []networking.Host
+
+func printActiveHosts() {
+	if len(activeHosts) <= 0 {
+		fmt.Println("No devices online")
+		return
+	}
+
+	fmt.Print("ID\tIP Address\tMAC Addres\t\tHostname\n")
+	for _, host := range activeHosts {
+		fmt.Printf("%d\t%s\t%s\t%s\n", host.Id, host.IP, host.MAC, host.Name)
+	}
+}
+
 func runScan() {
 	iface, err := networking.GetActiveWiFiInterface()
 	if err != nil {
@@ -30,17 +44,17 @@ func runScan() {
 
 	startedTime := time.Now()
 	arpScanner := networking.NewArpScanner(iface)
-	hosts := arpScanner.Scan(ips)
+	activeHosts = arpScanner.Scan(ips)
 	timeTaken := time.Since(startedTime)
-	for _, host := range hosts {
-		fmt.Println(host)
-	}
+	printActiveHosts()
+
 	fmt.Printf("Scan completed in %v\n", timeTaken)
 
 }
 
 func help() {
 	fmt.Println("scan - scanning for all the host in the network")
+	fmt.Println("list - lists all the active devices in the network")
 	fmt.Println("quit | exit - for existing")
 }
 
@@ -60,6 +74,8 @@ func shell() {
 		switch command {
 		case "scan":
 			runScan()
+		case "list":
+			printActiveHosts()
 		case "help":
 			help()
 		default:
