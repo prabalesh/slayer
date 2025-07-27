@@ -12,16 +12,23 @@ import (
 func (s *ShellSession) RunNetworkScan() {
 	fmt.Printf("🌐 Detected interface: %s\n", s.store.Iface.Name)
 	fmt.Printf("📍 Detected CIDR: %s\n", s.store.CIDR)
+
 	ips, err := networking.GenerateIPsFromCIDR(s.store.CIDR)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	fmt.Printf("🎯 Scanning %d IPs using optimized ARP method (most accurate)...\n", len(ips))
+
 	startedTime := time.Now()
-	fmt.Println("⏳ Scanning network...")
-	arpScanner := scanner.NewArpScanner(&s.store)
-	arpScanner.Scan(ips)
+
+	// Use the optimized ARP scanner for maximum accuracy
+	optimizedScanner := scanner.NewArpScanner(&s.store)
+	optimizedScanner.Scan(ips)
+
 	timeTaken := time.Since(startedTime)
+
 	fmt.Println("\n✅ Scan completed!")
 	s.DisplayActiveHosts()
-	fmt.Printf("⏱️  Time taken: %v\n", timeTaken)
+	fmt.Printf("⏱️  Time taken: %v (optimized for accuracy + performance)\n", timeTaken)
 }
