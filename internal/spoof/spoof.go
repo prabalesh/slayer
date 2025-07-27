@@ -20,7 +20,6 @@ func Spoof(ctx context.Context, iface *net.Interface, targetIP net.IP, targetMAC
 	for {
 		select {
 		case <-ctx.Done():
-			fmt.Printf("[!] Stopping spoofing for %s\n", targetIP)
 			return
 		case <-ticker.C:
 			// Poison target: "Gateway is at our MAC"
