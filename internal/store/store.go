@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/prabalesh/slayer/internal/networking"
 	"github.com/prabalesh/slayer/internal/spoof"
@@ -89,6 +90,7 @@ func (sm *SpoofManager) Start(host *Host, iface *net.Interface, gatewayIP net.IP
 	sm.cancelMap[host.ID] = cancel
 
 	go spoof.Spoof(ctx, iface, host.IP, host.MAC, gatewayIP, gatewayMAC)
+	time.Sleep(1 * time.Second)
 }
 
 // Stop ends spoofing for a specific host.
@@ -111,4 +113,11 @@ func (sm *SpoofManager) StopAll() {
 		cancel()
 	}
 	sm.cancelMap = make(map[int64]context.CancelFunc)
+}
+
+func (s *Store) DisplaySpoofList() {
+	for id, _ := range s.SpoofManager.cancelMap {
+		host := s.Hosts[id]
+		fmt.Printf("%d\t%s\t%s\n", host.ID, host.IP.String(), host.Hostname)
+	}
 }
