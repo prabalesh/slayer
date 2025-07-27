@@ -14,12 +14,14 @@ type SpoofManager struct {
 
 // Host represents a discovered device on the network.
 type Host struct {
-	ID       int64            // Unique identifier
-	IP       net.IP           // IPv4 address
-	MAC      net.HardwareAddr // MAC address
-	Hostname string           // Resolved hostname (if any)
-	Online   bool             // Whether host is currently reachable
-	Limited  bool             // Whether traffic is currently throttled
+	ID            int64            // Unique identifier
+	IP            net.IP           // IPv4 address
+	MAC           net.HardwareAddr // MAC address
+	Hostname      string           // Resolved hostname (if any)
+	Online        bool             // Whether host is currently reachable
+	Limited       bool             // Whether traffic is currently throttled
+	UploadSpeed   string
+	DownloadSpeed string
 }
 
 // Store holds global network context and all known hosts.
