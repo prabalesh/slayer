@@ -3,14 +3,15 @@ package shell
 import "fmt"
 
 var commands = map[string]string{
-	"scan":  "Perform network scan to discover active hosts",
-	"list":  "Display all discovered active hosts",
-	"limit": "Set bandwidth limits on target hosts",
-	"spoof": "Perform ARP spoofing attack",
-	"help":  "Show available commands",
-	"quit":  "Exit Slayer",
-	"exit":  "Exit Slayer",
-	"clear": "Clear the terminal screen",
+	"scan":    "Perform network scan to discover active hosts",
+	"list":    "Display all discovered active hosts",
+	"limit":   "Set bandwidth limits on target hosts",
+	"unlimit": "Removes bandwidth limits on target hosts",
+	"spoof":   "Perform ARP spoofing attack",
+	"help":    "Show available commands",
+	"quit":    "Exit Slayer",
+	"exit":    "Exit Slayer",
+	"clear":   "Clear the terminal screen",
 }
 
 func (s *ShellSession) HandleHelp() {
