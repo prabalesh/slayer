@@ -1,8 +1,16 @@
 package store
 
 import (
+	"context"
 	"net"
+	"sync"
 )
+
+// SpoofManager controls spoofing operations per host.
+type SpoofManager struct {
+	cancelMap map[int64]context.CancelFunc
+	mu        sync.Mutex
+}
 
 // Host represents a discovered device on the network.
 type Host struct {
@@ -16,9 +24,10 @@ type Host struct {
 
 // Store holds global network context and all known hosts.
 type Store struct {
-	Iface      *net.Interface   // Active network interface
-	GatewayIP  net.IP           // Default gateway IP
-	GatewayMAC net.HardwareAddr // Default gateway MAC
-	CIDR       string           // CIDR of the interface (e.g. 192.168.1.0/24)
-	Hosts      map[int64]*Host  // Keyed by IP string (e.g. "192.168.1.101")
+	Iface        *net.Interface   // Active network interface
+	GatewayIP    net.IP           // Default gateway IP
+	GatewayMAC   net.HardwareAddr // Default gateway MAC
+	CIDR         string           // CIDR of the interface (e.g. 192.168.1.0/24)
+	Hosts        map[int64]*Host  // Keyed by IP string (e.g. "192.168.1.101")
+	SpoofManager *SpoofManager
 }
