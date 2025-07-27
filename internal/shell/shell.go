@@ -41,6 +41,8 @@ func (s *ShellSession) Start() {
 			s.Help()
 		case "limit":
 			s.Limit(args)
+		case "spoof":
+			s.Spoof(args)
 		default:
 			fmt.Println("Invalid command use help to list all the commands")
 		}
