@@ -8,6 +8,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/prabalesh/slayer/internal/limiter"
 	"github.com/prabalesh/slayer/internal/store"
 )
 
@@ -36,6 +37,7 @@ func (s *ShellSession) Start() {
 		command, args := s.parseCommand(input)
 
 		if s.shouldExit(command) {
+			s.Close()
 			fmt.Println("\n🔴 Shutting down Slayer...")
 			break
 		}
@@ -49,6 +51,7 @@ func (s *ShellSession) setupSignalHandler() {
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
+		s.Close()
 		fmt.Println("\n\n🔴 Interrupted! Exiting Slayer...")
 		os.Exit(0)
 	}()
@@ -103,23 +106,29 @@ func (s *ShellSession) executeCommand(command string, args []string) {
 	case "help":
 		s.HandleHelp()
 	case "limit":
-		if len(args) < 2 {
-			fmt.Println("❌ Usage: limit <target_ip> <bandwidth_limit>")
-			return
-		}
-		fmt.Printf("⚠️  Setting bandwidth limit for %s to %s...\n", args[0], args[1])
 		s.Limit(args)
+	case "unlimit":
+		s.Unlimit(args)
 	case "spoof":
-		if len(args) < 2 {
-			fmt.Println("❌ Usage: spoof <target_ip> <gateway_ip>")
-			return
-		}
-		fmt.Printf("🎭 Starting ARP spoofing: %s -> %s...\n", args[0], args[1])
 		s.Spoof(args)
 	case "clear":
 		fmt.Print("\033[2J\033[H")
 	default:
 		fmt.Printf("❌ Unknown command: '%s'\n", command)
 		fmt.Println("💡 Type 'help' to see available commands")
+	}
+}
+
+func (s *ShellSession) Close() {
+	for _, host := range s.store.Hosts {
+		if host.Limited {
+			fmt.Printf("Removing limit on %s...\n", host.IP.String())
+			err := limiter.Remove(host.IP.String(), s.store.Iface.Name)
+			if err != nil {
+				fmt.Printf("Can't remove limit on %s\n", host.IP.String())
+				return
+			}
+			fmt.Printf("Removed limit on %s\n", host.IP.String())
+		}
 	}
 }
