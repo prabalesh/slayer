@@ -2,9 +2,12 @@
 package store
 
 import (
+	"context"
 	"fmt"
+	"net"
 
 	"github.com/prabalesh/slayer/internal/networking"
+	"github.com/prabalesh/slayer/internal/spoof"
 )
 
 // NewStore creates and returns a fully initialized Store.
@@ -30,11 +33,12 @@ func NewStore() (*Store, error) {
 	}
 
 	store := &Store{
-		Iface:      iface,
-		GatewayIP:  gatewayIP,
-		GatewayMAC: gatewayMAC,
-		CIDR:       cidr,
-		Hosts:      make(map[int64]*Host),
+		Iface:        iface,
+		GatewayIP:    gatewayIP,
+		GatewayMAC:   gatewayMAC,
+		CIDR:         cidr,
+		Hosts:        make(map[int64]*Host),
+		SpoofManager: NewSpoofManager(),
 	}
 
 	return store, nil
@@ -61,4 +65,50 @@ func (s *Store) ListHosts() []*Host {
 		hosts = append(hosts, host)
 	}
 	return hosts
+}
+
+// spoofmanager
+
+// NewSpoofManager returns a new instance of SpoofManager.
+func NewSpoofManager() *SpoofManager {
+	return &SpoofManager{
+		cancelMap: make(map[int64]context.CancelFunc),
+	}
+}
+
+// Start begins spoofing the specified host.
+func (sm *SpoofManager) Start(host *Host, iface *net.Interface, gatewayIP net.IP, gatewayMAC net.HardwareAddr) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	if _, exists := sm.cancelMap[host.ID]; exists {
+		return // already spoofing
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	sm.cancelMap[host.ID] = cancel
+
+	go spoof.Spoof(ctx, iface, host.IP, host.MAC, gatewayIP, gatewayMAC)
+}
+
+// Stop ends spoofing for a specific host.
+func (sm *SpoofManager) Stop(hostID int64) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	if cancel, exists := sm.cancelMap[hostID]; exists {
+		cancel()
+		delete(sm.cancelMap, hostID)
+	}
+}
+
+// StopAll stops spoofing for all hosts.
+func (sm *SpoofManager) StopAll() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	for _, cancel := range sm.cancelMap {
+		cancel()
+	}
+	sm.cancelMap = make(map[int64]context.CancelFunc)
 }
