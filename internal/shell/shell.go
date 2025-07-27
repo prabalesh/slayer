@@ -10,6 +10,7 @@ import (
 
 	"github.com/prabalesh/slayer/internal/limiter"
 	"github.com/prabalesh/slayer/internal/store"
+	"github.com/prabalesh/slayer/internal/utils/color"
 )
 
 type ShellSession struct {
@@ -74,10 +75,10 @@ func (s *ShellSession) printWelcome() {
 }
 
 func (s *ShellSession) readInput() string {
-	fmt.Print("⚡ slayer> ")
+	fmt.Print(color.BlueText("⚡ slayer> ", false))
 	input, err := s.reader.ReadString('\n')
 	if err != nil {
-		fmt.Printf("❌ Error reading input: %v\n", err)
+		fmt.Print(color.RedText(fmt.Sprintf("❌ Error reading input: %v\n", err), false))
 		return ""
 	}
 	return strings.TrimSpace(input)
