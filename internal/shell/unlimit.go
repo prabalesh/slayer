@@ -49,6 +49,8 @@ func (s *ShellSession) Unlimit(args []string) {
 
 	// Update host status
 	s.store.Hosts[int64(hostId)].Limited = false
+	s.store.Hosts[int64(hostId)].DownloadSpeed = ""
+	s.store.Hosts[int64(hostId)].UploadSpeed = ""
 
 	// Stop spoofing
 	s.store.SpoofManager.Stop(int64(hostId))

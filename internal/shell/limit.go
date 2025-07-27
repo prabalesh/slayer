@@ -63,6 +63,8 @@ func (s *ShellSession) Limit(args []string) {
 	}
 
 	s.store.Hosts[targetHost.ID].Limited = true
+	s.store.Hosts[targetHost.ID].DownloadSpeed = downloadRate
+	s.store.Hosts[targetHost.ID].UploadSpeed = uploadRate
 
 	fmt.Printf("✅ Limit applied for %s (Up: %s, Down: %s)\n", targetHost.IP, uploadRate, downloadRate)
 }
