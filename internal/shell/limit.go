@@ -2,11 +2,7 @@ package shell
 
 import (
 	"fmt"
-	"net"
 	"strconv"
-
-	"github.com/prabalesh/slayer/internal/networking"
-	"github.com/prabalesh/slayer/internal/spoof"
 )
 
 // Modified Limit function for ShellSession
@@ -35,23 +31,13 @@ func (s *ShellSession) Limit(args []string) {
 
 	fmt.Printf("Limiting host %s (%s) to %s\n", targetHost.IP, targetHost.Hostname, rate)
 
-	// Get gateway information
-	gatewayIp, err := networking.GetDefaultGatewayIP()
-	if err != nil {
-		fmt.Println("Can't get the gateway IP")
-		return
-	}
-
-	gatewayMAC, err := networking.GetGatewayMAC(gatewayIp)
-	if err != nil {
-		fmt.Printf("Can't get gateway MAC: %s\n", err)
-		return
-	}
-
-	fmt.Printf("Gateway IP: %s, MAC: %s\n", gatewayIp, gatewayMAC)
+	// Print interface and gateway info (already available in store)
+	fmt.Printf("Gateway IP: %s, MAC: %s\n", s.store.GatewayIP, s.store.GatewayMAC)
 	fmt.Printf("Interface: %s\n", s.store.Iface.Name)
 
-	// Start ARP spoofing in a goroutine
-	go spoof.Spoof(s.store.Iface, targetHost.IP, net.HardwareAddr(targetHost.MAC), gatewayIp, gatewayMAC)
+	// Start spoofing using SpoofManager
+	s.store.SpoofManager.Start(targetHost, s.store.Iface, s.store.GatewayIP, s.store.GatewayMAC)
 
+	// You could apply rate limiting here with `tc` if needed, e.g.:
+	// limiter.Apply(targetHost.IP, rate)
 }
