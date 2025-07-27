@@ -1,8 +1,8 @@
 package shell
 
 import (
-	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -10,20 +10,31 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/chzyer/readline"
 	"github.com/prabalesh/slayer/internal/limiter"
 	"github.com/prabalesh/slayer/internal/store"
 	"github.com/prabalesh/slayer/internal/utils/color"
 )
 
 type ShellSession struct {
-	store  store.Store
-	reader *bufio.Reader
+	store store.Store
+	rl    *readline.Instance
 }
 
 func NewShell(s store.Store) *ShellSession {
+	rl, err := readline.NewEx(&readline.Config{
+		Prompt:          color.BlueText("⚡ slayer> ", false),
+		HistoryFile:     "/tmp/slayer_history.tmp",
+		InterruptPrompt: "^C",
+		EOFPrompt:       "exit",
+	})
+	if err != nil {
+		panic(err)
+	}
+
 	return &ShellSession{
-		store:  s,
-		reader: bufio.NewReader(os.Stdin),
+		store: s,
+		rl:    rl,
 	}
 }
 
@@ -32,7 +43,6 @@ func (s *ShellSession) CheckRequirements() error {
 
 	allPassed := true
 
-	// OS Check
 	if runtime.GOOS == "linux" {
 		fmt.Println(color.GreenText("✅ Linux OS detected", false))
 	} else {
@@ -40,7 +50,6 @@ func (s *ShellSession) CheckRequirements() error {
 		allPassed = false
 	}
 
-	// Root Check
 	if os.Geteuid() == 0 {
 		fmt.Println(color.GreenText("✅ Running as root", false))
 	} else {
@@ -48,7 +57,6 @@ func (s *ShellSession) CheckRequirements() error {
 		allPassed = false
 	}
 
-	// Required binaries
 	requiredTools := []string{"iptables", "tc", "ip"}
 
 	for _, tool := range requiredTools {
@@ -125,13 +133,21 @@ func (s *ShellSession) printWelcome() {
 }
 
 func (s *ShellSession) readInput() string {
-	fmt.Print(color.BlueText("⚡ slayer> ", false))
-	input, err := s.reader.ReadString('\n')
+	line, err := s.rl.Readline()
 	if err != nil {
+		if err == readline.ErrInterrupt {
+			if len(line) == 0 {
+				fmt.Println("\n🔴 Interrupted! Exiting Slayer...")
+				os.Exit(0)
+			}
+			return ""
+		} else if err == io.EOF {
+			os.Exit(0)
+		}
 		fmt.Print(color.RedText(fmt.Sprintf("❌ Error reading input: %v\n", err), false))
 		return ""
 	}
-	return strings.TrimSpace(input)
+	return strings.TrimSpace(line)
 }
 
 func (s *ShellSession) parseCommand(input string) (string, []string) {
@@ -171,6 +187,8 @@ func (s *ShellSession) executeCommand(command string, args []string) {
 }
 
 func (s *ShellSession) Close() {
+	s.rl.Close() // Close the readline instance
+
 	for _, host := range s.store.Hosts {
 		if host.Limited {
 			fmt.Printf("Removing limit on %s...\n", host.IP.String())
