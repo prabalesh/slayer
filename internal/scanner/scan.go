@@ -1,4 +1,4 @@
-package networking
+package scanner
 
 import (
 	"net"
@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/mdlayher/arp"
+	"github.com/prabalesh/slayer/internal/store"
 )
 
 type Job func()
@@ -42,35 +43,29 @@ func (p *Pool) Wait() {
 	p.wg.Wait()
 }
 
-type Host struct {
-	Id   uint64
-	IP   net.IP
-	MAC  string
-	Name string
-}
-
 type ArpScanner struct {
-	idCounter  uint64
+	idCounter  int64
 	iface      *net.Interface
 	timeout    time.Duration
 	maxWorkers int
+	store      *store.Store
 }
 
-func NewArpScanner(iface *net.Interface) *ArpScanner {
+func NewArpScanner(s *store.Store) *ArpScanner {
 	return &ArpScanner{
-		iface:      iface,
-		timeout:    5 * time.Second,
-		maxWorkers: 64,
+		iface:      s.Iface,
+		timeout:    2 * time.Second,
+		maxWorkers: 50,
+		store:      s,
 	}
 }
 
-func (a *ArpScanner) Scan(ips []net.IP) []Host {
+func (a *ArpScanner) Scan(ips []net.IP) {
 	// Check if we got valid inputs
 	if a.iface == nil || len(ips) == 0 {
-		return []Host{}
+		return
 	}
 
-	var activeHosts []Host
 	var hostsMutex sync.Mutex
 
 	pool := NewPool(a.maxWorkers)
@@ -82,7 +77,7 @@ func (a *ArpScanner) Scan(ips []net.IP) []Host {
 			if host != nil {
 				// We found a device! Add it to our list safely
 				hostsMutex.Lock()
-				activeHosts = append(activeHosts, *host)
+				a.store.AddHost(host)
 				hostsMutex.Unlock()
 			}
 		}
@@ -90,11 +85,10 @@ func (a *ArpScanner) Scan(ips []net.IP) []Host {
 
 	}
 	pool.Wait()
-	return activeHosts
 }
 
 // scanSingleIP tries to find a device at one specific IP address
-func (a *ArpScanner) scanSingleIP(ip net.IP) *Host {
+func (a *ArpScanner) scanSingleIP(ip net.IP) *store.Host {
 	// Create a connection to send ARP requests
 	conn, err := arp.Dial(a.iface)
 	if err != nil {
@@ -122,16 +116,16 @@ func (a *ArpScanner) scanSingleIP(ip net.IP) *Host {
 	}
 
 	// We found a device! Create a Host record
-	id := atomic.AddUint64(&a.idCounter, 1)
-	host := &Host{
-		Id:  id,
+	id := atomic.AddInt64(&a.idCounter, 1)
+	host := &store.Host{
+		ID:  id,
 		IP:  ip,
-		MAC: mac.String(),
+		MAC: mac,
 	}
 
 	names, err := net.LookupAddr(ip.String())
 	if err == nil && len(names) > 0 {
-		host.Name = names[0]
+		host.Hostname = names[0]
 	}
 
 	return host

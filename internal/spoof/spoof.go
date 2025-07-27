@@ -91,6 +91,6 @@ func Spoof(iface *net.Interface, targetIP net.IP, targetMAC net.HardwareAddr, ga
 
 		fmt.Println("[+] Sent spoofed ARP packets")
 
-		time.Sleep(2 * time.Second)
+		time.Sleep(1 * time.Second)
 	}
 }
