@@ -3,6 +3,8 @@ package networking
 import (
 	"fmt"
 	"net"
+	"os/exec"
+	"strings"
 )
 
 // getInterfaceCIDR returns the first IPv4 address in CIDR notation for the given interface
@@ -59,4 +61,55 @@ func inc(ip net.IP) {
 			break
 		}
 	}
+}
+
+// GetDefaultGatewayIP returns the default gateway as net.IP
+func GetDefaultGatewayIP() (net.IP, error) {
+	out, err := exec.Command("ip", "route").Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to run ip route: %v", err)
+	}
+
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "default") {
+			fields := strings.Fields(line)
+			for i, field := range fields {
+				if field == "via" && i+1 < len(fields) {
+					ip := net.ParseIP(fields[i+1])
+					if ip == nil {
+						return nil, fmt.Errorf("failed to parse gateway IP: %s", fields[i+1])
+					}
+					return ip, nil
+				}
+			}
+		}
+	}
+	return nil, fmt.Errorf("default gateway not found")
+}
+
+// GetMACFromIP sends an ARP request to get the MAC address of the given net.IP
+func GetGatewayMAC(gatewayIP net.IP) (net.HardwareAddr, error) {
+	out, err := exec.Command("ip", "neigh").Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to run ip neigh: %v", err)
+	}
+
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, gatewayIP.String()) {
+			fields := strings.Fields(line)
+			for i, field := range fields {
+				if field == "lladdr" && i+1 < len(fields) {
+					macStr := fields[i+1]
+					mac, err := net.ParseMAC(macStr)
+					if err != nil {
+						return nil, fmt.Errorf("invalid MAC address: %s", macStr)
+					}
+					return mac, nil
+				}
+			}
+		}
+	}
+	return nil, fmt.Errorf("MAC address not found for gateway IP: %s", gatewayIP.String())
 }
