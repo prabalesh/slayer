@@ -29,9 +29,6 @@ func (l *Limiter) Init(iface *net.Interface) error {
 // Mutex to prevent concurrent modifications
 var mu sync.Mutex
 
-// Track which IPs have download limits applied
-var downloadLimitsApplied = make(map[string]bool)
-
 // Constants
 const (
 	DownloadMark = "10"
@@ -179,7 +176,7 @@ func (l *Limiter) Apply(ip, uploadRate, downloadRate, iface string) error {
 }
 
 // Remove bandwidth limits from an IP address
-func Remove(ip, iface string) error {
+func (l *Limiter) Remove(ip, iface string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -197,13 +194,11 @@ func Remove(ip, iface string) error {
 
 	// Remove iptables mangle rules (only upload uses marks)
 	runCommandIgnoreError("iptables", "-t", "mangle", "-D", "PREROUTING", "-s", ip, "-j", "MARK", "--set-mark", UploadMark)
+	runCommandIgnoreError("iptables", "-t", "mangle", "-D", "PREROUTING", "-d", ip, "-j", "MARK", "--set-mark", DownloadMark)
 
 	// Remove tc download filter + class (from ifb0 if download limits were applied)
-	if downloadLimitsApplied[ip] {
-		runCommandIgnoreError("tc", "filter", "del", "dev", IFBDevice, "protocol", "ip", "prio", "1", "u32", "match", "ip", "dst", ip)
-		runCommandIgnoreError("tc", "class", "del", "dev", IFBDevice, "classid", downloadClass)
-		delete(downloadLimitsApplied, ip)
-	}
+	runCommandIgnoreError("tc", "filter", "del", "dev", iface, "protocol", "ip", "handle", DownloadMark, "fw", "flowid", downloadClass)
+	runCommandIgnoreError("tc", "class", "del", "dev", iface, "classid", downloadClass)
 
 	// Remove tc upload filter + class (from real interface)
 	runCommandIgnoreError("tc", "filter", "del", "dev", iface, "protocol", "ip", "handle", UploadMark, "fw", "flowid", uploadClass)
@@ -211,18 +206,6 @@ func Remove(ip, iface string) error {
 
 	log.Printf("Successfully removed bandwidth limits for %s", ip)
 	return nil
-}
-
-// ListLimits returns a list of IPs that currently have limits applied
-func ListLimits() []string {
-	mu.Lock()
-	defer mu.Unlock()
-
-	var ips []string
-	for ip := range downloadLimitsApplied {
-		ips = append(ips, ip)
-	}
-	return ips
 }
 
 // Cleanup removes all bandwidth limiting rules and cleans up interfaces
@@ -244,9 +227,6 @@ func Cleanup(iface string) error {
 	// Bring down and remove ifb0
 	runCommandIgnoreError("ip", "link", "set", "dev", IFBDevice, "down")
 	runCommandIgnoreError("ip", "link", "del", IFBDevice)
-
-	// Clear tracking maps
-	downloadLimitsApplied = make(map[string]bool)
 
 	log.Println("Cleanup completed")
 	return nil

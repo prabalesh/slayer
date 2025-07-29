@@ -11,7 +11,6 @@ import (
 	"syscall"
 
 	"github.com/chzyer/readline"
-	"github.com/prabalesh/slayer/internal/limiter"
 	"github.com/prabalesh/slayer/internal/store"
 	"github.com/prabalesh/slayer/internal/utils/color"
 )
@@ -192,7 +191,7 @@ func (s *ShellSession) Close() {
 	for _, host := range s.store.Hosts {
 		if host.Limited {
 			fmt.Printf("Removing limit on %s...\n", host.IP.String())
-			err := limiter.Remove(host.IP.String(), s.store.Iface.Name)
+			err := s.store.Limiter.Remove(host.IP.String(), s.store.Iface.Name)
 			if err != nil {
 				fmt.Printf("Can't remove limit on %s\n", host.IP.String())
 				return
