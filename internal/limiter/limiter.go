@@ -11,6 +11,21 @@ import (
 	"sync"
 )
 
+type Limiter struct {
+	iface *net.Interface
+}
+
+func NewLimiter() *Limiter {
+	return &Limiter{}
+}
+
+func (l *Limiter) Init(iface *net.Interface) error {
+	if err := runCommand("tc", "qdisc", "add", "dev", iface.Name, "root", "handle", "1:", "htb", "default", "30"); err != nil {
+		return fmt.Errorf("failed to add root qdisc on %s: %v", iface.Name, err)
+	}
+	return nil
+}
+
 // Mutex to prevent concurrent modifications
 var mu sync.Mutex
 
