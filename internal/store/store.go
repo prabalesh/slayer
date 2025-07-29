@@ -7,6 +7,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/prabalesh/slayer/internal/limiter"
 	"github.com/prabalesh/slayer/internal/networking"
 	"github.com/prabalesh/slayer/internal/spoof"
 )
@@ -33,6 +34,9 @@ func NewStore() (*Store, error) {
 		return nil, fmt.Errorf("failed to get interface CIDR: %w", err)
 	}
 
+	newLimiter := limiter.NewLimiter()
+	newLimiter.Init(iface)
+
 	store := &Store{
 		Iface:        iface,
 		GatewayIP:    gatewayIP,
@@ -40,6 +44,7 @@ func NewStore() (*Store, error) {
 		CIDR:         cidr,
 		Hosts:        make(map[int64]*Host),
 		SpoofManager: NewSpoofManager(),
+		Limiter:      newLimiter,
 	}
 
 	return store, nil

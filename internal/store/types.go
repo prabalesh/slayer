@@ -4,6 +4,8 @@ import (
 	"context"
 	"net"
 	"sync"
+
+	"github.com/prabalesh/slayer/internal/limiter"
 )
 
 // SpoofManager controls spoofing operations per host.
@@ -32,4 +34,5 @@ type Store struct {
 	CIDR         string           // CIDR of the interface (e.g. 192.168.1.0/24)
 	Hosts        map[int64]*Host  // Keyed by IP string (e.g. "192.168.1.101")
 	SpoofManager *SpoofManager
+	Limiter      *limiter.Limiter
 }
