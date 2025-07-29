@@ -20,7 +20,7 @@ func NewLimiter() *Limiter {
 }
 
 func (l *Limiter) Init(iface *net.Interface) error {
-	if err := runCommand("tc", "qdisc", "add", "dev", iface.Name, "root", "handle", "1:", "htb", "default", "30"); err != nil {
+	if err := runCommand("tc", "qdisc", "add", "dev", iface.Name, "root", "handle", "1:", "htb", "default", "999"); err != nil {
 		return fmt.Errorf("failed to add root qdisc on %s: %v", iface.Name, err)
 	}
 	return nil
@@ -101,50 +101,8 @@ func ipToClassID(ip string, direction string) int {
 	return base + id
 }
 
-// setupIFB0 initializes the ifb0 device for ingress shaping
-func setupIFB0(iface string) error {
-	// Load ifb module
-	if err := runCommand("modprobe", "ifb"); err != nil {
-		log.Printf("Warning: failed to load ifb module: %v", err)
-	}
-
-	// Create and bring up ifb0 (ignore errors if it already exists)
-	runCommandIgnoreError("ip", "link", "add", IFBDevice, "type", "ifb")
-	if err := runCommand("ip", "link", "set", "dev", IFBDevice, "up"); err != nil {
-		return fmt.Errorf("failed to bring up %s: %v", IFBDevice, err)
-	}
-
-	// Setup ingress redirection from real interface to ifb0
-	runCommandIgnoreError("tc", "qdisc", "del", "dev", iface, "ingress")
-	if err := runCommand("tc", "qdisc", "add", "dev", iface, "handle", "ffff:", "ingress"); err != nil {
-		return fmt.Errorf("failed to add ingress qdisc on %s: %v", iface, err)
-	}
-
-	if err := runCommand("tc", "filter", "add", "dev", iface, "parent", "ffff:", "protocol", "ip", "u32",
-		"match", "u32", "0", "0", "action", "mirred", "egress", "redirect", "dev", IFBDevice); err != nil {
-		return fmt.Errorf("failed to add ingress filter on %s: %v", iface, err)
-	}
-
-	// Add root qdisc to ifb0
-	runCommandIgnoreError("tc", "qdisc", "del", "dev", IFBDevice, "root")
-	if err := runCommand("tc", "qdisc", "add", "dev", IFBDevice, "root", "handle", "1:", "htb", "default", "30"); err != nil {
-		return fmt.Errorf("failed to add root qdisc on %s: %v", IFBDevice, err)
-	}
-
-	return nil
-}
-
-// setupRootQdisc adds root qdisc to the real interface for upload shaping
-func setupRootQdisc(iface string) error {
-	runCommandIgnoreError("tc", "qdisc", "del", "dev", iface, "root")
-	if err := runCommand("tc", "qdisc", "add", "dev", iface, "root", "handle", "1:", "htb", "default", "30"); err != nil {
-		return fmt.Errorf("failed to add root qdisc on %s: %v", iface, err)
-	}
-	return nil
-}
-
 // Apply bandwidth limits to an IP address
-func Apply(ip, uploadRate, downloadRate, iface string) error {
+func (l *Limiter) Apply(ip, uploadRate, downloadRate, iface string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -166,21 +124,6 @@ func Apply(ip, uploadRate, downloadRate, iface string) error {
 	downloadClass := fmt.Sprintf("1:%d", ipToClassID(ip, "down"))
 	uploadClass := fmt.Sprintf("1:%d", ipToClassID(ip, "up"))
 
-	// Setup ifb0 for download shaping if needed
-	if downloadRate != "" {
-		if err := setupIFB0(iface); err != nil {
-			return err
-		}
-		downloadLimitsApplied[ip] = true
-	}
-
-	// Setup root qdisc for upload shaping
-	if uploadRate != "" {
-		if err := setupRootQdisc(iface); err != nil {
-			return err
-		}
-	}
-
 	// Set iptables mangle rules for upload only (download doesn't work with marks on ifb0)
 	if uploadRate != "" {
 		// Remove existing rule first (ignore errors)
@@ -190,30 +133,40 @@ func Apply(ip, uploadRate, downloadRate, iface string) error {
 		}
 	}
 
-	// Apply DOWNLOAD limits (on ifb0) - use u32 filter instead of fw filter
+	if downloadRate != "" {
+		// Remove existing rule first (ignore errors)
+		runCommandIgnoreError("iptables", "-t", "mangle", "-D", "PREROUTING", "-s", ip, "-j", "MARK", "--set-mark", DownloadMark)
+		if err := runCommand("iptables", "-t", "mangle", "-A", "PREROUTING", "-d", ip, "-j", "MARK", "--set-mark", DownloadMark); err != nil {
+			return fmt.Errorf("failed to add iptables download rule for %s: %v", ip, err)
+		}
+	}
+
 	if downloadRate != "" {
 		// Remove existing class and filter first (ignore errors)
-		runCommandIgnoreError("tc", "filter", "del", "dev", IFBDevice, "protocol", "ip", "prio", "1", "u32", "match", "ip", "dst", ip)
-		runCommandIgnoreError("tc", "class", "del", "dev", IFBDevice, "classid", downloadClass)
+		// runCommandIgnoreError("tc", "filter", "del", "dev", iface, "protocol", "ip", "handle", DownloadMark, "fw", "flowid", downloadClass)
+		// runCommandIgnoreError("tc", "class", "del", "dev", iface, "classid", downloadClass)
 
-		if err := runCommand("tc", "class", "add", "dev", IFBDevice, "parent", "1:", "classid", downloadClass, "htb", "rate", downloadRate); err != nil {
-			return fmt.Errorf("failed to add download class for %s: %v", ip, err)
+		if err := runCommand("tc", "class", "add", "dev", iface, "parent", "1:", "classid", downloadClass, "htb", "rate", downloadRate); err != nil {
+			if err := runCommand("tc", "class", "change", "dev", iface, "parent", "1:", "classid", downloadClass, "htb", "rate", downloadRate); err != nil {
+				return fmt.Errorf("failed to add download class for %s: %v", ip, err)
+			}
 		}
 
-		// Use u32 filter to match destination IP directly instead of relying on iptables marks
-		if err := runCommand("tc", "filter", "add", "dev", IFBDevice, "protocol", "ip", "prio", "1", "u32", "match", "ip", "dst", ip, "flowid", downloadClass); err != nil {
-			return fmt.Errorf("failed to add download filter for %s: %v", ip, err)
+		if err := runCommand("tc", "filter", "add", "dev", iface, "protocol", "ip", "handle", DownloadMark, "fw", "flowid", downloadClass); err != nil {
+			return fmt.Errorf("failed to add upload filter for %s: %v", ip, err)
 		}
 	}
 
 	// Apply UPLOAD limits (on real interface)
 	if uploadRate != "" {
 		// Remove existing class and filter first (ignore errors)
-		runCommandIgnoreError("tc", "filter", "del", "dev", iface, "protocol", "ip", "handle", UploadMark, "fw", "flowid", uploadClass)
-		runCommandIgnoreError("tc", "class", "del", "dev", iface, "classid", uploadClass)
+		// runCommandIgnoreError("tc", "filter", "del", "dev", iface, "protocol", "ip", "handle", UploadMark, "fw", "flowid", uploadClass)
+		// runCommandIgnoreError("tc", "class", "del", "dev", iface, "classid", uploadClass)
 
 		if err := runCommand("tc", "class", "add", "dev", iface, "parent", "1:", "classid", uploadClass, "htb", "rate", uploadRate); err != nil {
-			return fmt.Errorf("failed to add upload class for %s: %v", ip, err)
+			if err := runCommand("tc", "class", "change", "dev", iface, "parent", "1:", "classid", uploadClass, "htb", "rate", uploadRate); err != nil {
+				return fmt.Errorf("failed to add upload class for %s: %v", ip, err)
+			}
 		}
 
 		if err := runCommand("tc", "filter", "add", "dev", iface, "protocol", "ip", "handle", UploadMark, "fw", "flowid", uploadClass); err != nil {
@@ -258,15 +211,6 @@ func Remove(ip, iface string) error {
 
 	log.Printf("Successfully removed bandwidth limits for %s", ip)
 	return nil
-}
-
-// Update modifies existing bandwidth limits for an IP
-func Update(ip, uploadRate, downloadRate, iface string) error {
-	// Remove existing limits first, then apply new ones
-	if err := Remove(ip, iface); err != nil {
-		log.Printf("Warning: failed to remove existing limits for %s: %v", ip, err)
-	}
-	return Apply(ip, uploadRate, downloadRate, iface)
 }
 
 // ListLimits returns a list of IPs that currently have limits applied
