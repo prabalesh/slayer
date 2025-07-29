@@ -33,7 +33,6 @@ var mu sync.Mutex
 const (
 	DownloadMark = "10"
 	UploadMark   = "20"
-	IFBDevice    = "ifb0"
 )
 
 // validateIP checks if the IP address is valid
@@ -222,11 +221,6 @@ func Cleanup(iface string) error {
 	// Remove tc qdiscs
 	runCommandIgnoreError("tc", "qdisc", "del", "dev", iface, "root")
 	runCommandIgnoreError("tc", "qdisc", "del", "dev", iface, "ingress")
-	runCommandIgnoreError("tc", "qdisc", "del", "dev", IFBDevice, "root")
-
-	// Bring down and remove ifb0
-	runCommandIgnoreError("ip", "link", "set", "dev", IFBDevice, "down")
-	runCommandIgnoreError("ip", "link", "del", IFBDevice)
 
 	log.Println("Cleanup completed")
 	return nil
