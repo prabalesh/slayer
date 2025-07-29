@@ -199,4 +199,5 @@ func (s *ShellSession) Close() {
 			fmt.Printf("Removed limit on %s\n", host.IP.String())
 		}
 	}
+	s.store.Limiter.Cleanup()
 }

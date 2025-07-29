@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -15,13 +16,13 @@ type Limiter struct {
 	iface *net.Interface
 }
 
-func NewLimiter() *Limiter {
-	return &Limiter{}
+func NewLimiter(iface *net.Interface) *Limiter {
+	return &Limiter{iface: iface}
 }
 
-func (l *Limiter) Init(iface *net.Interface) error {
-	if err := runCommand("tc", "qdisc", "add", "dev", iface.Name, "root", "handle", "1:", "htb", "default", "999"); err != nil {
-		return fmt.Errorf("failed to add root qdisc on %s: %v", iface.Name, err)
+func (l *Limiter) Init() error {
+	if err := runCommand("tc", "qdisc", "add", "dev", l.iface.Name, "root", "handle", "1:", "htb", "default", "999"); err != nil {
+		return fmt.Errorf("failed to add root qdisc on %s: %v", l.iface.Name, err)
 	}
 	return nil
 }
@@ -52,15 +53,6 @@ func validateRate(rate string) error {
 	matched, _ := regexp.MatchString(`^\d+(bit|kbit|mbit|gbit|tbit|bps|kbps|mbps|gbps|tbps)$`, rate)
 	if !matched {
 		return fmt.Errorf("invalid rate format: %s (expected format like '1mbit', '100kbit')", rate)
-	}
-	return nil
-}
-
-// validateInterface checks if network interface exists
-func validateInterface(iface string) error {
-	_, err := net.InterfaceByName(iface)
-	if err != nil {
-		return fmt.Errorf("interface %s not found: %v", iface, err)
 	}
 	return nil
 }
@@ -99,6 +91,10 @@ func ipToClassID(ip string, direction string) int {
 
 // Apply bandwidth limits to an IP address
 func (l *Limiter) Apply(ip, uploadRate, downloadRate string) error {
+	if l.iface == nil {
+		fmt.Println("iface pointer in limiter is empty")
+		os.Exit(1)
+	}
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -180,9 +176,6 @@ func (l *Limiter) Remove(ip string) error {
 	if err := validateIP(ip); err != nil {
 		return err
 	}
-	if err := validateInterface(l.iface.Name); err != nil {
-		return err
-	}
 
 	// Generate class IDs
 	downloadClass := fmt.Sprintf("1:%d", ipToClassID(ip, "down"))
@@ -205,19 +198,15 @@ func (l *Limiter) Remove(ip string) error {
 }
 
 // Cleanup removes all bandwidth limiting rules and cleans up interfaces
-func Cleanup(iface string) error {
+func (l *Limiter) Cleanup() error {
 	mu.Lock()
 	defer mu.Unlock()
 
 	log.Println("Cleaning up all bandwidth limiting rules...")
 
-	// Remove all iptables mangle rules
-	runCommandIgnoreError("iptables", "-t", "mangle", "-F", "PREROUTING")
-	runCommandIgnoreError("iptables", "-t", "mangle", "-F", "POSTROUTING")
-
 	// Remove tc qdiscs
-	runCommandIgnoreError("tc", "qdisc", "del", "dev", iface, "root")
-	runCommandIgnoreError("tc", "qdisc", "del", "dev", iface, "ingress")
+	runCommandIgnoreError("tc", "qdisc", "del", "dev", l.iface.Name, "root")
+	runCommandIgnoreError("tc", "qdisc", "del", "dev", l.iface.Name, "ingress")
 
 	log.Println("Cleanup completed")
 	return nil

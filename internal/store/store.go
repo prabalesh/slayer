@@ -34,8 +34,8 @@ func NewStore() (*Store, error) {
 		return nil, fmt.Errorf("failed to get interface CIDR: %w", err)
 	}
 
-	newLimiter := limiter.NewLimiter()
-	newLimiter.Init(iface)
+	newLimiter := limiter.NewLimiter(iface)
+	newLimiter.Init()
 
 	store := &Store{
 		Iface:        iface,
