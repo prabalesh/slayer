@@ -54,7 +54,7 @@ func (s *ShellSession) Limit(args []string) {
 	s.store.SpoofManager.Start(targetHost, s.store.Iface, s.store.GatewayIP, s.store.GatewayMAC)
 
 	// Apply limit via limiter
-	err = s.store.Limiter.Apply(targetHost.IP.String(), uploadRate, downloadRate, s.store.Iface.Name)
+	err = s.store.Limiter.Apply(targetHost.IP.String(), uploadRate, downloadRate)
 	if err != nil {
 		fmt.Printf("❌ Failed to apply rate limit: %v\n", err)
 		return

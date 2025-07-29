@@ -39,7 +39,7 @@ func (s *ShellSession) Unlimit(args []string) {
 	fmt.Printf("🔓 Removing bandwidth limit for %s (%s)...\n", host.IP, host.Hostname)
 
 	// Remove bandwidth limit
-	err = s.store.Limiter.Remove(host.IP.String(), s.store.Iface.Name)
+	err = s.store.Limiter.Remove(host.IP.String())
 	if err != nil {
 		fmt.Printf("❌ Failed to remove bandwidth limit for %s: %v\n", host.IP, err)
 		return

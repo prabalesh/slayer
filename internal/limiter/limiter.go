@@ -98,7 +98,7 @@ func ipToClassID(ip string, direction string) int {
 }
 
 // Apply bandwidth limits to an IP address
-func (l *Limiter) Apply(ip, uploadRate, downloadRate, iface string) error {
+func (l *Limiter) Apply(ip, uploadRate, downloadRate string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -110,9 +110,6 @@ func (l *Limiter) Apply(ip, uploadRate, downloadRate, iface string) error {
 		return err
 	}
 	if err := validateRate(downloadRate); err != nil {
-		return err
-	}
-	if err := validateInterface(iface); err != nil {
 		return err
 	}
 
@@ -142,13 +139,13 @@ func (l *Limiter) Apply(ip, uploadRate, downloadRate, iface string) error {
 		// runCommandIgnoreError("tc", "filter", "del", "dev", iface, "protocol", "ip", "handle", DownloadMark, "fw", "flowid", downloadClass)
 		// runCommandIgnoreError("tc", "class", "del", "dev", iface, "classid", downloadClass)
 
-		if err := runCommand("tc", "class", "add", "dev", iface, "parent", "1:", "classid", downloadClass, "htb", "rate", downloadRate); err != nil {
-			if err := runCommand("tc", "class", "change", "dev", iface, "parent", "1:", "classid", downloadClass, "htb", "rate", downloadRate); err != nil {
+		if err := runCommand("tc", "class", "add", "dev", l.iface.Name, "parent", "1:", "classid", downloadClass, "htb", "rate", downloadRate); err != nil {
+			if err := runCommand("tc", "class", "change", "dev", l.iface.Name, "parent", "1:", "classid", downloadClass, "htb", "rate", downloadRate); err != nil {
 				return fmt.Errorf("failed to add download class for %s: %v", ip, err)
 			}
 		}
 
-		if err := runCommand("tc", "filter", "add", "dev", iface, "protocol", "ip", "handle", DownloadMark, "fw", "flowid", downloadClass); err != nil {
+		if err := runCommand("tc", "filter", "add", "dev", l.iface.Name, "protocol", "ip", "handle", DownloadMark, "fw", "flowid", downloadClass); err != nil {
 			return fmt.Errorf("failed to add upload filter for %s: %v", ip, err)
 		}
 	}
@@ -156,16 +153,16 @@ func (l *Limiter) Apply(ip, uploadRate, downloadRate, iface string) error {
 	// Apply UPLOAD limits (on real interface)
 	if uploadRate != "" {
 		// Remove existing class and filter first (ignore errors)
-		// runCommandIgnoreError("tc", "filter", "del", "dev", iface, "protocol", "ip", "handle", UploadMark, "fw", "flowid", uploadClass)
-		// runCommandIgnoreError("tc", "class", "del", "dev", iface, "classid", uploadClass)
+		// runCommandIgnoreError("tc", "filter", "del", "dev", l.iface.Name, "protocol", "ip", "handle", UploadMark, "fw", "flowid", uploadClass)
+		// runCommandIgnoreError("tc", "class", "del", "dev", l.iface.Name, "classid", uploadClass)
 
-		if err := runCommand("tc", "class", "add", "dev", iface, "parent", "1:", "classid", uploadClass, "htb", "rate", uploadRate); err != nil {
-			if err := runCommand("tc", "class", "change", "dev", iface, "parent", "1:", "classid", uploadClass, "htb", "rate", uploadRate); err != nil {
+		if err := runCommand("tc", "class", "add", "dev", l.iface.Name, "parent", "1:", "classid", uploadClass, "htb", "rate", uploadRate); err != nil {
+			if err := runCommand("tc", "class", "change", "dev", l.iface.Name, "parent", "1:", "classid", uploadClass, "htb", "rate", uploadRate); err != nil {
 				return fmt.Errorf("failed to add upload class for %s: %v", ip, err)
 			}
 		}
 
-		if err := runCommand("tc", "filter", "add", "dev", iface, "protocol", "ip", "handle", UploadMark, "fw", "flowid", uploadClass); err != nil {
+		if err := runCommand("tc", "filter", "add", "dev", l.iface.Name, "protocol", "ip", "handle", UploadMark, "fw", "flowid", uploadClass); err != nil {
 			return fmt.Errorf("failed to add upload filter for %s: %v", ip, err)
 		}
 	}
@@ -175,7 +172,7 @@ func (l *Limiter) Apply(ip, uploadRate, downloadRate, iface string) error {
 }
 
 // Remove bandwidth limits from an IP address
-func (l *Limiter) Remove(ip, iface string) error {
+func (l *Limiter) Remove(ip string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -183,7 +180,7 @@ func (l *Limiter) Remove(ip, iface string) error {
 	if err := validateIP(ip); err != nil {
 		return err
 	}
-	if err := validateInterface(iface); err != nil {
+	if err := validateInterface(l.iface.Name); err != nil {
 		return err
 	}
 
@@ -196,12 +193,12 @@ func (l *Limiter) Remove(ip, iface string) error {
 	runCommandIgnoreError("iptables", "-t", "mangle", "-D", "PREROUTING", "-d", ip, "-j", "MARK", "--set-mark", DownloadMark)
 
 	// Remove tc download filter + class (from ifb0 if download limits were applied)
-	runCommandIgnoreError("tc", "filter", "del", "dev", iface, "protocol", "ip", "handle", DownloadMark, "fw", "flowid", downloadClass)
-	runCommandIgnoreError("tc", "class", "del", "dev", iface, "classid", downloadClass)
+	runCommandIgnoreError("tc", "filter", "del", "dev", l.iface.Name, "protocol", "ip", "handle", DownloadMark, "fw", "flowid", downloadClass)
+	runCommandIgnoreError("tc", "class", "del", "dev", l.iface.Name, "classid", downloadClass)
 
 	// Remove tc upload filter + class (from real interface)
-	runCommandIgnoreError("tc", "filter", "del", "dev", iface, "protocol", "ip", "handle", UploadMark, "fw", "flowid", uploadClass)
-	runCommandIgnoreError("tc", "class", "del", "dev", iface, "classid", uploadClass)
+	runCommandIgnoreError("tc", "filter", "del", "dev", l.iface.Name, "protocol", "ip", "handle", UploadMark, "fw", "flowid", uploadClass)
+	runCommandIgnoreError("tc", "class", "del", "dev", l.iface.Name, "classid", uploadClass)
 
 	log.Printf("Successfully removed bandwidth limits for %s", ip)
 	return nil

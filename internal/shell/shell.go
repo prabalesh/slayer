@@ -191,7 +191,7 @@ func (s *ShellSession) Close() {
 	for _, host := range s.store.Hosts {
 		if host.Limited {
 			fmt.Printf("Removing limit on %s...\n", host.IP.String())
-			err := s.store.Limiter.Remove(host.IP.String(), s.store.Iface.Name)
+			err := s.store.Limiter.Remove(host.IP.String())
 			if err != nil {
 				fmt.Printf("Can't remove limit on %s\n", host.IP.String())
 				return
